@@ -16,6 +16,7 @@
 #include <linux/interrupt.h>
 #include <linux/mfd/core.h>
 #include <linux/module.h>
+#include <linux/notifier.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/of_gpio.h>
@@ -458,6 +459,20 @@ static int wm5102_clear_write_sequencer(struct arizona *arizona)
 	arizona_disable_reset(arizona);
 
 	return 0;
+}
+
+static int arizona_dcvdd_notify(struct notifier_block *nb,
+				unsigned long action, void *data)
+{
+	struct arizona *arizona = container_of(nb, struct arizona,
+					       dcvdd_notifier);
+
+	dev_dbg(arizona->dev, "DCVDD notify %lx\n", action);
+
+	if (action & REGULATOR_EVENT_DISABLE)
+		msleep(20);
+
+	return NOTIFY_DONE;
 }
 
 #ifdef CONFIG_PM
@@ -1189,6 +1204,14 @@ int arizona_dev_init(struct arizona *arizona)
 		goto err_early;
 	}
 
+	arizona->dcvdd_notifier.notifier_call = arizona_dcvdd_notify;
+	ret = regulator_register_notifier(arizona->dcvdd,
+					  &arizona->dcvdd_notifier);
+	if (ret < 0) {
+		dev_err(dev, "Failed to register DCVDD notifier %d\n", ret);
+		goto err_dcvdd;
+	}
+
 	if (arizona->pdata.reset) {
 		/* Start out with /RESET low to put the chip into reset */
 		ret = devm_gpio_request_one(arizona->dev, arizona->pdata.reset,
@@ -1196,16 +1219,19 @@ int arizona_dev_init(struct arizona *arizona)
 					    "arizona /RESET");
 		if (ret != 0) {
 			dev_err(dev, "Failed to request /RESET: %d\n", ret);
-			goto err_dcvdd;
+			goto err_notifier;
 		}
 	}
+
+	/* Ensure period of reset asserted before we apply the supplies */
+	msleep(20);
 
 	ret = regulator_bulk_enable(arizona->num_core_supplies,
 				    arizona->core_supplies);
 	if (ret != 0) {
 		dev_err(dev, "Failed to enable core supplies: %d\n",
 			ret);
-		goto err_dcvdd;
+		goto err_notifier;
 	}
 
 	ret = regulator_enable(arizona->dcvdd);
@@ -1580,6 +1606,8 @@ err_reset:
 err_enable:
 	regulator_bulk_disable(arizona->num_core_supplies,
 			       arizona->core_supplies);
+err_notifier:
+	regulator_unregister_notifier(arizona->dcvdd, &arizona->dcvdd_notifier);
 err_dcvdd:
 	regulator_put(arizona->dcvdd);
 err_early:
@@ -1593,6 +1621,7 @@ int arizona_dev_exit(struct arizona *arizona)
 	pm_runtime_disable(arizona->dev);
 
 	regulator_disable(arizona->dcvdd);
+	regulator_unregister_notifier(arizona->dcvdd, &arizona->dcvdd_notifier);
 	regulator_put(arizona->dcvdd);
 
 	mfd_remove_devices(arizona->dev);
