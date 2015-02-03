@@ -68,6 +68,10 @@ Optional properties:
     a value that is out of range for a 16 bit register then the chip default
     will be used. If present exactly five values must be specified.
 
+  - wlf,dmic-ref : DMIC reference for each input, must contain four cells if
+    specified. 0 indicates MICVDD and is the default, 1,2,3 indicate the
+    respective MICBIAS.
+
   - wlf,inmode : A list of INn_MODE register values, where n is the number
     of input signals. Valid values are 0 (Differential), 1 (Single-ended) and
     2 (Digital Microphone). If absent, INn_MODE registers set to 0 by default.
@@ -124,4 +128,6 @@ codec: wm5102@1a {
 		ARIZONA_GP_DEFAULT
 		ARIZONA_GP_DEFAULT
 	>;
+
+	wlf,dmic-ref = <0 0 1 0>;
 };
