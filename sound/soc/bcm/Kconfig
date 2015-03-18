@@ -36,6 +36,14 @@ config SND_BCM2708_SOC_HIFIBERRY_AMP
         help
          Say Y or M if you want to add support for the HifiBerry Amp amplifier board.
 
+config SND_BCM2708_SOC_RPI_CODEC_WSP
+	tristate "Support for Cirrus sound pi"
+	depends on SND_BCM2708_SOC_I2S || SND_BCM2835_SOC_I2S
+	select SND_SOC_WM5102
+	select SND_SOC_WM8804
+	help
+	  Say Y or M if you want to add support for Cirrus sound pi
+
 config SND_BCM2708_SOC_RPI_DAC
         tristate "Support for RPi-DAC"
         depends on SND_BCM2708_SOC_I2S || SND_BCM2835_SOC_I2S
