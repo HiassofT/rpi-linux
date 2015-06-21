@@ -35,8 +35,8 @@
 		target = <&gpio>;
 		__overlay__ {
 			wlf_pins: wlf_pins {
-				brcm,pins = <17 22 27>;
-				brcm,function = <1 1 0>;
+				brcm,pins = <17 22 27 8>;
+				brcm,function = <1 1 0 1>;
 			};
 		};
 	};
@@ -124,13 +124,14 @@
 			#address-cells = <1>;
 			#size-cells = <0>;
 
-			wm8804@3a {
+			wm8804@3b {
 				#sound-dai-cells = <0>;
 				compatible = "wlf,wm8804";
-				reg = <0x3a>;
+				reg = <0x3b>;
 				status = "okay";
 				PVDD-supply = <&ldo0>;
 				DVDD-supply = <&ldo0>;
+				wlf,reset-gpio = <&gpio 8 0>;
 			};
 		};
 	};

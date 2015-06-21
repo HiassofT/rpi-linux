@@ -14,24 +14,13 @@
 
 #include <linux/module.h>
 #include <linux/slab.h>
-#include <linux/gpio.h>
-#include <linux/delay.h>
-#include <linux/io.h>
 #include <sound/pcm_params.h>
 
 #include "../codecs/wm5102.h"
 #include "../codecs/wm8804.h"
 
-#include <asm/system_info.h>
-
 #define WM8804_CLKOUT_HZ 12000000
 
-/*TODO: Shift this to platform data*/
-#define GPIO_WM8804_RST 8
-#define GPIO_WM8804_MODE 2
-#define GPIO_WM8804_SW_MODE 23
-#define GPIO_WM8804_I2C_ADDR_B 18
-#define GPIO_WM8804_I2C_ADDR_B_PLUS 13
 #define RPI_WLF_SR 44100
 #define WM5102_MAX_SYSCLK_1 49152000 /*max sysclk for 4K family*/
 #define WM5102_MAX_SYSCLK_2 45158400 /*max sysclk for 11.025K family*/
@@ -42,13 +31,6 @@ struct wm5102_machine_priv {
 	int wm8804_sr;
 	int wm5102_sr;
 	int sync_path_enable;
-};
-
-enum {
-	GPIO_FSEL_INPUT, GPIO_FSEL_OUTPUT,
-	GPIO_FSEL_ALT5, GPIO_FSEL_ALT_4,
-	GPIO_FSEL_ALT0, GPIO_FSEL_ALT1,
-	GPIO_FSEL_ALT2, GPIO_FSEL_ALT3,
 };
 
 int spdif_rx_enable_event(struct snd_soc_dapm_widget *w,
@@ -189,124 +171,6 @@ static int rpi_set_bias_level_post(struct snd_soc_card *card,
 	dapm->bias_level = level;
 
 	return 0;
-}
-static void bcm2708_set_gpio_alt(int pin, int alt)
-{
-	/*
-	 * This is the common way to handle the GPIO pins for
-	 * the Raspberry Pi.
-	 * TODO This is a hack. Use pinmux / pinctrl.
-	 */
-#define INP_GPIO(g) *(gpio+((g)/10)) &= ~(7<<(((g)%10)*3))
-#define SET_GPIO_ALT(g,a) *(gpio+(((g)/10))) |= (((a)<=3?(a)+4:(a)==4?3:2)<<(((g)%10)*3))
-	unsigned int *gpio;
-	gpio = ioremap(GPIO_BASE, SZ_16K);
-	INP_GPIO(pin);
-	SET_GPIO_ALT(pin, alt);
-	iounmap(gpio);
-#undef INP_GPIO
-#undef SET_GPIO_ALT
-}
-
-static int wm8804_reset(void)
- {
-	int ret;
-	unsigned int gpio_wm8804_i2c_addr;
-
-	if ((system_rev & 0xffffff) >= 0x10) {
-		/* Model B+ or later */
-		gpio_wm8804_i2c_addr = GPIO_WM8804_I2C_ADDR_B_PLUS;
-	} else {
-		gpio_wm8804_i2c_addr = GPIO_WM8804_I2C_ADDR_B;
-	}
-
-	if (!gpio_is_valid(GPIO_WM8804_RST)) {
-		pr_err("Skipping unavailable gpio %d (%s)\n", GPIO_WM8804_RST, "wm8804_rst");
-		return -ENOMEM;
-	}
-
-	if (!gpio_is_valid(GPIO_WM8804_MODE)) {
-		pr_err("Skipping unavailable gpio %d (%s)\n", GPIO_WM8804_MODE, "wm8804_mode");
-		return -ENOMEM;
-	}
-
-	if (!gpio_is_valid(GPIO_WM8804_SW_MODE)) {
-		pr_err("Skipping unavailable gpio %d (%s)\n", GPIO_WM8804_SW_MODE, "wm8804_sw_mode");
-		return -ENOMEM;
-	}
-
-	if (!gpio_is_valid(gpio_wm8804_i2c_addr)) {
-		pr_err("Skipping unavailable gpio %d (%s)\n", gpio_wm8804_i2c_addr, "wm8804_i2c_addr");
-		return -ENOMEM;
-	}
-
-	ret = gpio_request(GPIO_WM8804_RST, "wm8804_rst");
-	if (ret < 0) {
-		pr_err("gpio_request wm8804_rst failed\n");
-		return ret;
-	}
-
-	ret = gpio_request(GPIO_WM8804_MODE, "wm8804_mode");
-	if (ret < 0) {
-		pr_err("gpio_request wm8804_mode failed\n");
-		return ret;
-	}
-
-	ret = gpio_request(GPIO_WM8804_SW_MODE, "wm8804_sw_mode");
-	if (ret < 0) {
-		pr_err("gpio_request wm8804_sw_mode failed\n");
-		return ret;
-	}
-
-	ret = gpio_request(gpio_wm8804_i2c_addr, "wm8804_i2c_addr");
-	if (ret < 0) {
-		pr_err("gpio_request wm8804_i2c_addr failed\n");
-		return ret;
-	}
-
-	/*GPIO2 is used for SW/HW Mode Select and after Reset the same pin is used as
-	I2C data line, so initially it is configured as GPIO OUT from BCM perspective*/
-	/*Set SW Mode*/
-	ret = gpio_direction_output(GPIO_WM8804_MODE, 1);
-	if (ret < 0) {
-		pr_err("gpio_direction_output wm8804_mode failed\n");
-	}
-
-	/*Set 2 Wire (I2C) Mode*/
-	ret = gpio_direction_output(GPIO_WM8804_SW_MODE, 0);
-	if (ret < 0) {
-		pr_err("gpio_direction_output wm8804_sw_mode failed\n");
-	}
-
-	/*Set 2 Wire (I2C) Addr to 0x3A, writing 1 will make the Addr as 0x3B*/
-	ret = gpio_direction_output(gpio_wm8804_i2c_addr, 0);
-	if (ret < 0) {
-		pr_err("gpio_direction_output wm8804_i2c_addr failed\n");
-	}
-
-	/*Take WM8804 out of reset*/
-	ret = gpio_direction_output(GPIO_WM8804_RST, 1);
-	if (ret < 0) {
-		pr_err("gpio_direction_output wm8804_rst failed\n");
-	}
-
-	/*Put WM8804 in reset*/
-	gpio_set_value(GPIO_WM8804_RST, 0);
-	mdelay(500);
-	/*Take WM8804 out of reset*/
-	gpio_set_value(GPIO_WM8804_RST, 1);
-	mdelay(500);
-
-	gpio_free(GPIO_WM8804_RST);
-	gpio_free(GPIO_WM8804_MODE);
-	gpio_free(GPIO_WM8804_SW_MODE);
-	gpio_free(gpio_wm8804_i2c_addr);
-
-	/*GPIO2 is used for SW/HW Mode Select and after Reset the same pin is used as
-	I2C data line, so after reset  it is configured as I2C data line i.e ALT0 function*/
-	bcm2708_set_gpio_alt(GPIO_WM8804_MODE, 0);
-
-	return ret;
 }
 
 static int snd_rpi_wsp_config_5102_clks(struct snd_soc_codec *wm5102_codec, int sr)
@@ -509,7 +373,7 @@ static struct snd_soc_dai_link snd_rpi_wsp_dai[] = {
 		.stream_name = "SPDIF Tx/Rx",
 		.cpu_dai_name = "wm5102-aif2",
 		.codec_dai_name = "wm8804-spdif",
-		.codec_name = "wm8804.1-003a",
+		.codec_name = "wm8804.1-003b",
 		.dai_fmt = SND_SOC_DAIFMT_I2S
 			| SND_SOC_DAIFMT_NB_NF
 			| SND_SOC_DAIFMT_CBM_CFM,
@@ -577,8 +441,6 @@ static int snd_rpi_wsp_probe(struct platform_device *pdev)
 {
 	int ret = 0;
 	struct wm5102_machine_priv *wm5102;
-
-	wm8804_reset();
 
 	wm5102 = kzalloc(sizeof *wm5102, GFP_KERNEL);
 	if (!wm5102)
