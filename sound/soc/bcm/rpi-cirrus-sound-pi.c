@@ -25,6 +25,9 @@
 #define WM5102_MAX_SYSCLK_1 49152000 /*max sysclk for 4K family*/
 #define WM5102_MAX_SYSCLK_2 45158400 /*max sysclk for 11.025K family*/
 
+#define DAI_WM5102 0
+#define DAI_WM8804 1
+
 static struct snd_soc_card snd_rpi_wsp;
 
 struct wm5102_machine_priv {
@@ -38,10 +41,18 @@ int spdif_rx_enable_event(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_card *card = &snd_rpi_wsp;
 	struct wm5102_machine_priv *priv = snd_soc_card_get_drvdata(card);
-	struct snd_soc_codec *wm5102_codec = card->rtd[0].codec;
+	struct snd_soc_pcm_runtime *wm5102_rtd;
+	struct snd_soc_codec *wm5102_codec;
 	int ret = 0;
 	int clk_freq;
 	int sr = priv->wm8804_sr;
+
+	wm5102_rtd = snd_soc_get_pcm_runtime(card, card->dai_link[DAI_WM5102].name);
+	if (!wm5102_rtd) {
+		dev_warn(card->dev, "spdif_rx_enable_event: couldn't get WM5102 rtd\n");
+		return -EFAULT;
+	}
+	wm5102_codec = wm5102_rtd->codec;
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
@@ -120,12 +131,20 @@ static int rpi_set_bias_level(struct snd_soc_card *card,
 				struct snd_soc_dapm_context *dapm,
 				enum snd_soc_bias_level level)
 {
-	struct snd_soc_codec *wm5102_codec = card->rtd[0].codec;
+	struct snd_soc_pcm_runtime *wm5102_rtd;
+	struct snd_soc_codec *wm5102_codec;
 	struct wm5102_machine_priv *priv = snd_soc_card_get_drvdata(card);
 
 	int ret;
 	int sr = priv->wm5102_sr;
 	int clk_freq = (sr % 4000 == 0) ? WM5102_MAX_SYSCLK_1 : WM5102_MAX_SYSCLK_2;
+
+	wm5102_rtd = snd_soc_get_pcm_runtime(card, card->dai_link[DAI_WM5102].name);
+	if (!wm5102_rtd) {
+		dev_warn(card->dev, "rpi_set_bias_level: couldn't get WM5102 rtd\n");
+		return -EFAULT;
+	}
+	wm5102_codec = wm5102_rtd->codec;
 
 	switch (level) {
 	case SND_SOC_BIAS_OFF:
@@ -137,7 +156,7 @@ static int rpi_set_bias_level(struct snd_soc_card *card,
 						    WM8804_CLKOUT_HZ,
 						    clk_freq);
 			if (ret != 0) {
-				dev_err(wm5102_codec->dev, "Failed to enable FLL1 with Ref Clock Loop: %d\n", ret);
+				dev_err(wm5102_codec->dev, "Failed to enable FLL1: %d\n", ret);
 				return ret;
 			}
 		}
@@ -155,7 +174,15 @@ static int rpi_set_bias_level_post(struct snd_soc_card *card,
 		struct snd_soc_dapm_context *dapm,
 		enum snd_soc_bias_level level)
 {
-	struct snd_soc_codec *wm5102_codec = card->rtd[0].codec;
+	struct snd_soc_pcm_runtime *wm5102_rtd;
+	struct snd_soc_codec *wm5102_codec;
+
+	wm5102_rtd = snd_soc_get_pcm_runtime(card, card->dai_link[DAI_WM5102].name);
+	if (!wm5102_rtd) {
+		dev_warn(card->dev, "rpi_set_bias_level_post: couldn't get WM5102 rtd\n");
+		return -EFAULT;
+	}
+	wm5102_codec = wm5102_rtd->codec;
 
 	switch (level) {
 	case SND_SOC_BIAS_STANDBY:
@@ -235,14 +262,27 @@ static int snd_rpi_wsp_hw_params(struct snd_pcm_substream *substream,
 {
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct snd_soc_card *card = rtd->card;
-	struct snd_soc_codec *wm5102_codec = rtd->codec;
-	struct snd_soc_dai *bcm_i2s_dai = rtd->cpu_dai;
-	struct snd_soc_codec *wm8804_codec = card->rtd[1].codec;
-	struct snd_soc_dai *wm8804_codec_dai = card->rtd[1].codec_dai;
+	struct snd_soc_pcm_runtime *wm5102_rtd, *wm8804_rtd;
+	struct snd_soc_codec *wm5102_codec, *wm8804_codec;
+	struct snd_soc_dai *wm8804_codec_dai, *bcm_i2s_dai = rtd->cpu_dai;
 	struct wm5102_machine_priv *priv = snd_soc_card_get_drvdata(card);
 	int ret, capture_stream_opened,playback_stream_opened;
 	unsigned int bclkratio, tx_mask, rx_mask;
 	int width, num_slots=1;
+
+	wm5102_rtd = snd_soc_get_pcm_runtime(card, card->dai_link[DAI_WM5102].name);
+	if (!wm5102_rtd) {
+		dev_warn(card->dev, "snd_rpi_wsp_hw_params: couldn't get WM5102 rtd\n");
+		return -EFAULT;
+	}
+	wm8804_rtd = snd_soc_get_pcm_runtime(card, card->dai_link[DAI_WM8804].name);
+	if (!wm8804_rtd) {
+		dev_warn(card->dev, "snd_rpi_wsp_hw_params: couldn't get WM8804 rtd\n");
+		return -EFAULT;
+	}
+	wm5102_codec = wm5102_rtd->codec;
+	wm8804_codec = wm8804_rtd->codec;
+	wm8804_codec_dai = wm8804_rtd->codec_dai;
 
 	bclkratio = 2 * snd_pcm_format_physical_width(params_format(params));
 
@@ -386,35 +426,54 @@ static struct snd_soc_dai_link snd_rpi_wsp_dai[] = {
 static int snd_rpi_wsp_late_probe(struct snd_soc_card *card)
 {
 	struct wm5102_machine_priv *priv = snd_soc_card_get_drvdata(card);
+	struct snd_soc_pcm_runtime *wm5102_rtd, *wm8804_rtd;
+	struct snd_soc_codec *wm5102_codec, *wm8804_codec;
+	struct snd_soc_dai *wm5102_codec_dai, *wm8804_codec_dai, *wm8804_cpu_dai;
 	int ret;
+
+	wm5102_rtd = snd_soc_get_pcm_runtime(card, card->dai_link[DAI_WM5102].name);
+	if (!wm5102_rtd) {
+		dev_warn(card->dev, "snd_rpi_wsp_late_probe: couldn't get WM5102 rtd\n");
+		return -EFAULT;
+	}
+	wm8804_rtd = snd_soc_get_pcm_runtime(card, card->dai_link[DAI_WM8804].name);
+	if (!wm8804_rtd) {
+		dev_warn(card->dev, "snd_rpi_wsp_late_probe: couldn't get WM8804 rtd\n");
+		return -EFAULT;
+	}
+	wm5102_codec = wm5102_rtd->codec;
+	wm5102_codec_dai = wm5102_rtd->codec_dai;
+	wm8804_codec = wm8804_rtd->codec;
+	wm8804_codec_dai = wm8804_rtd->codec_dai;
+	wm8804_cpu_dai = wm8804_rtd->cpu_dai;
 
 	priv->wm8804_sr = RPI_WLF_SR;
 	priv->wm5102_sr = RPI_WLF_SR;
 	priv->sync_path_enable = 0;
 
-	ret = snd_soc_codec_set_sysclk(card->rtd[0].codec, ARIZONA_CLK_SYSCLK, ARIZONA_CLK_SRC_FLL1,
+	ret = snd_soc_codec_set_sysclk(wm5102_codec, ARIZONA_CLK_SYSCLK, ARIZONA_CLK_SRC_FLL1,
 					0, SND_SOC_CLOCK_IN);
 	if (ret != 0) {
-		dev_err(card->rtd[0].codec->dev, "Failed to set SYSCLK to Zero: %d\n", ret);
+		dev_err(wm5102_codec->dev, "Failed to set SYSCLK to Zero: %d\n", ret);
 		return ret;
 	}
 
-	ret = snd_rpi_wsp_config_8804_clks(card->rtd[1].codec, card->rtd[1].codec_dai, RPI_WLF_SR);
+	ret = snd_rpi_wsp_config_8804_clks(wm8804_codec, wm8804_codec_dai, RPI_WLF_SR);
 
 	if (ret != 0) {
-		dev_err(card->rtd[1].codec->dev, "snd_rpi_wsp_config_8804_clks failed: %d\n", ret);
+		dev_err(wm8804_codec->dev, "snd_rpi_wsp_config_8804_clks failed: %d\n", ret);
 		return ret;
 	}
 
-	ret = snd_soc_dai_set_sysclk(card->rtd[0].codec_dai,  ARIZONA_CLK_SYSCLK, 0, 0);
+	ret = snd_soc_dai_set_sysclk(wm5102_codec_dai,  ARIZONA_CLK_SYSCLK, 0, 0);
 	if (ret != 0) {
-		dev_err(card->rtd[0].codec->dev, "Failed to set codec dai clk domain: %d\n", ret);
+		dev_err(wm5102_codec_dai->dev, "Failed to set codec dai clk domain: %d\n", ret);
 		return ret;
 	}
 
-	ret = snd_soc_dai_set_sysclk(card->rtd[1].cpu_dai, ARIZONA_CLK_SYSCLK, 0, 0);
+	ret = snd_soc_dai_set_sysclk(wm8804_cpu_dai, ARIZONA_CLK_SYSCLK, 0, 0);
 	if (ret != 0) {
-		dev_err(card->rtd[0].codec->dev, "Failed to set codec dai clk domain: %d\n", ret);
+		dev_err(wm8804_cpu_dai->dev, "Failed to set codec dai clk domain: %d\n", ret);
 		return ret;
 	}
 
@@ -450,7 +509,7 @@ static int snd_rpi_wsp_probe(struct platform_device *pdev)
 
 	if (pdev->dev.of_node) {
 	    struct device_node *i2s_node;
-	    struct snd_soc_dai_link *dai = &snd_rpi_wsp_dai[0];
+	    struct snd_soc_dai_link *dai = &snd_rpi_wsp_dai[DAI_WM5102];
 	    i2s_node = of_parse_phandle(pdev->dev.of_node,
 					"i2s-controller", 0);
 
