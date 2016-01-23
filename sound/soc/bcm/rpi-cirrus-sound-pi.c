@@ -151,10 +151,12 @@ static int rpi_set_bias_level(struct snd_soc_card *card,
 	if (dapm->dev != wm5102_codec_dai->dev)
 		return 0;
 
+	dev_dbg(wm5102_codec->dev, "change bias level from %d to %d, sync=%d\n",
+		dapm->bias_level, level, priv->sync_path_enable);
+
 	switch (level) {
-	case SND_SOC_BIAS_OFF:
-		break;
 	case SND_SOC_BIAS_ON:
+		/* no need to check current level, it can only be PREPARE */
 		if (!priv->sync_path_enable) {
 			ret = snd_soc_codec_set_pll(wm5102_codec, WM5102_FLL1,
 						    ARIZONA_CLK_SRC_MCLK1,
@@ -166,46 +168,24 @@ static int rpi_set_bias_level(struct snd_soc_card *card,
 			}
 		}
 		break;
-	default:
-		break;
-	}
-
-	dapm->bias_level = level;
-
-	return 0;
-}
-
-static int rpi_set_bias_level_post(struct snd_soc_card *card,
-		struct snd_soc_dapm_context *dapm,
-		enum snd_soc_bias_level level)
-{
-	struct snd_soc_pcm_runtime *wm5102_rtd;
-	struct snd_soc_codec *wm5102_codec;
-	struct snd_soc_dai *wm5102_codec_dai;
-
-	wm5102_rtd = snd_soc_get_pcm_runtime(card, card->dai_link[DAI_WM5102].name);
-	if (!wm5102_rtd) {
-		dev_warn(card->dev, "rpi_set_bias_level_post: couldn't get WM5102 rtd\n");
-		return -EFAULT;
-	}
-	wm5102_codec = wm5102_rtd->codec;
-	wm5102_codec_dai = wm5102_rtd->codec_dai;
-
-	if (dapm->dev != wm5102_codec_dai->dev)
-		return 0;
-
-	switch (level) {
 	case SND_SOC_BIAS_STANDBY:
-		snd_soc_codec_set_pll(wm5102_codec, WM5102_FLL1,
+		if (dapm->bias_level != SND_SOC_BIAS_PREPARE)
+			break;
+
+		ret = snd_soc_codec_set_pll(wm5102_codec, WM5102_FLL1,
 			ARIZONA_FLL_SRC_NONE, 0, 0);
-		snd_soc_codec_set_pll(wm5102_codec, WM5102_FLL1_REFCLK,
+		if (ret)
+			 dev_warn(wm5102_codec->dev, "set_bias_level: Failed to stop FLL1: %d\n", ret);
+
+		ret = snd_soc_codec_set_pll(wm5102_codec, WM5102_FLL1_REFCLK,
 			ARIZONA_FLL_SRC_NONE, 0, 0);
+		if (ret)
+			 dev_warn(wm5102_codec->dev, "set_bias_level: Failed to stop FLL1_REFCLK: %d\n", ret);
+
 		break;
 	default:
 		break;
 	}
-
-	dapm->bias_level = level;
 
 	return 0;
 }
@@ -503,7 +483,6 @@ static struct snd_soc_card snd_rpi_wsp = {
 	.dapm_routes = rpi_wsp_dapm_routes,
 	.num_dapm_routes = ARRAY_SIZE(rpi_wsp_dapm_routes),
 	.set_bias_level = rpi_set_bias_level,
-	.set_bias_level_post = rpi_set_bias_level_post,
 };
 
 static int snd_rpi_wsp_probe(struct platform_device *pdev)
