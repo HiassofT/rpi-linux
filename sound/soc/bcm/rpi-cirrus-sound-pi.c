@@ -133,6 +133,7 @@ static int rpi_set_bias_level(struct snd_soc_card *card,
 {
 	struct snd_soc_pcm_runtime *wm5102_rtd;
 	struct snd_soc_codec *wm5102_codec;
+	struct snd_soc_dai *wm5102_codec_dai;
 	struct wm5102_machine_priv *priv = snd_soc_card_get_drvdata(card);
 
 	int ret;
@@ -145,6 +146,10 @@ static int rpi_set_bias_level(struct snd_soc_card *card,
 		return -EFAULT;
 	}
 	wm5102_codec = wm5102_rtd->codec;
+	wm5102_codec_dai = wm5102_rtd->codec_dai;
+
+	if (dapm->dev != wm5102_codec_dai->dev)
+		return 0;
 
 	switch (level) {
 	case SND_SOC_BIAS_OFF:
@@ -176,6 +181,7 @@ static int rpi_set_bias_level_post(struct snd_soc_card *card,
 {
 	struct snd_soc_pcm_runtime *wm5102_rtd;
 	struct snd_soc_codec *wm5102_codec;
+	struct snd_soc_dai *wm5102_codec_dai;
 
 	wm5102_rtd = snd_soc_get_pcm_runtime(card, card->dai_link[DAI_WM5102].name);
 	if (!wm5102_rtd) {
@@ -183,6 +189,10 @@ static int rpi_set_bias_level_post(struct snd_soc_card *card,
 		return -EFAULT;
 	}
 	wm5102_codec = wm5102_rtd->codec;
+	wm5102_codec_dai = wm5102_rtd->codec_dai;
+
+	if (dapm->dev != wm5102_codec_dai->dev)
+		return 0;
 
 	switch (level) {
 	case SND_SOC_BIAS_STANDBY:
