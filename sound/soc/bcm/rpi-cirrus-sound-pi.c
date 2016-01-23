@@ -13,6 +13,7 @@
  */
 
 #include <linux/module.h>
+#include <linux/mutex.h>
 #include <linux/slab.h>
 #include <sound/pcm_params.h>
 
@@ -34,6 +35,9 @@ struct wm5102_machine_priv {
 	int wm8804_sr;
 	int wm5102_sr;
 	int sync_path_enable;
+	int fll1_freq; /* negative means RefClock in spdif rx case */
+	/* mutex for synchronzing FLL1 access with DAPM */
+	struct mutex fll1_mutex;
 };
 
 int spdif_rx_enable_event(struct snd_soc_dapm_widget *w,
@@ -47,6 +51,8 @@ int spdif_rx_enable_event(struct snd_soc_dapm_widget *w,
 	int clk_freq;
 	int sr = priv->wm8804_sr;
 
+	dev_dbg(card->dev, "spdif_rx event %d\n", event);
+
 	wm5102_rtd = snd_soc_get_pcm_runtime(card, card->dai_link[DAI_WM5102].name);
 	if (!wm5102_rtd) {
 		dev_warn(card->dev, "spdif_rx_enable_event: couldn't get WM5102 rtd\n");
@@ -56,6 +62,11 @@ int spdif_rx_enable_event(struct snd_soc_dapm_widget *w,
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
+		mutex_lock(&priv->fll1_mutex);
+
+		dev_dbg(wm5102_codec->dev,
+			"spdif_rx: changing FLL1 to use Ref Clock\n");
+
 		/* Enable sync path in case of SPDIF capture use case */
 		clk_freq = (sr % 4000 == 0) ? WM5102_MAX_SYSCLK_1 : WM5102_MAX_SYSCLK_2;
 
@@ -71,12 +82,19 @@ int spdif_rx_enable_event(struct snd_soc_dapm_widget *w,
 					    clk_freq);
 		if (ret != 0) {
 			dev_err(wm5102_codec->dev, "Failed to enable FLL1 with Ref Clock Loop: %d\n", ret);
+			mutex_unlock(&priv->fll1_mutex);
 			return ret;
 		}
 
 		ret = snd_soc_codec_set_pll(wm5102_codec, WM5102_FLL1,
 					    ARIZONA_CLK_SRC_AIF2BCLK,
 					    sr * 64, clk_freq);
+		if (!ret)
+			/* set to negative to indicate we're doing spdif rx */
+			priv->fll1_freq = -clk_freq;
+
+		mutex_unlock(&priv->fll1_mutex);
+
 		if (ret != 0) {
 			dev_err(wm5102_codec->dev, "Failed to enable FLL1  Sync Clock Loop: %d\n", ret);
 			return ret;
@@ -158,10 +176,21 @@ static int rpi_set_bias_level(struct snd_soc_card *card,
 	case SND_SOC_BIAS_ON:
 		/* no need to check current level, it can only be PREPARE */
 		if (!priv->sync_path_enable) {
+			mutex_lock(&priv->fll1_mutex);
+
+			dev_dbg(wm5102_codec->dev,
+				"bias_on: changing FLL1 from %d to %d\n",
+				priv->fll1_freq, clk_freq);
+
 			ret = snd_soc_codec_set_pll(wm5102_codec, WM5102_FLL1,
 						    ARIZONA_CLK_SRC_MCLK1,
 						    WM8804_CLKOUT_HZ,
 						    clk_freq);
+			if (!ret)
+				priv->fll1_freq = clk_freq;
+
+			mutex_unlock(&priv->fll1_mutex);
+
 			if (ret != 0) {
 				dev_err(wm5102_codec->dev, "Failed to enable FLL1: %d\n", ret);
 				return ret;
@@ -171,6 +200,12 @@ static int rpi_set_bias_level(struct snd_soc_card *card,
 	case SND_SOC_BIAS_STANDBY:
 		if (dapm->bias_level != SND_SOC_BIAS_PREPARE)
 			break;
+
+		mutex_lock(&priv->fll1_mutex);
+
+		dev_dbg(wm5102_codec->dev,
+			"bias_standby: changing FLL1 from %d to off\n",
+			priv->fll1_freq);
 
 		ret = snd_soc_codec_set_pll(wm5102_codec, WM5102_FLL1,
 			ARIZONA_FLL_SRC_NONE, 0, 0);
@@ -182,6 +217,10 @@ static int rpi_set_bias_level(struct snd_soc_card *card,
 		if (ret)
 			 dev_warn(wm5102_codec->dev, "set_bias_level: Failed to stop FLL1_REFCLK: %d\n", ret);
 
+		priv->fll1_freq = 0;
+
+		mutex_unlock(&priv->fll1_mutex);
+
 		break;
 	default:
 		break;
@@ -190,11 +229,45 @@ static int rpi_set_bias_level(struct snd_soc_card *card,
 	return 0;
 }
 
-static int snd_rpi_wsp_config_5102_clks(struct snd_soc_codec *wm5102_codec, int sr)
+static int snd_rpi_wsp_config_5102_clks(
+	struct wm5102_machine_priv *priv,
+	struct snd_soc_codec *wm5102_codec, int sr)
 {
 	int ret;
 	int clk_freq = (sr % 4000 == 0) ? WM5102_MAX_SYSCLK_1 : WM5102_MAX_SYSCLK_2;
 
+	/*
+	 * Manually set up FLL1 if it's configured to another rate but only
+	 * if we are not using spdif rx (fll1_freq negative).
+	 * This is necessary if delayed DAPM powerdown hasn't stopped
+	 * the FLL before.
+	 */
+	if ((priv->fll1_freq > 0) && (priv->fll1_freq != clk_freq)) {
+		mutex_lock(&priv->fll1_mutex);
+
+		dev_dbg(wm5102_codec->dev,
+			"config_5102_clks: changing FLL1 from %d to %d\n",
+			priv->fll1_freq, clk_freq);
+
+		/*reset FLL1*/
+		snd_soc_codec_set_pll(wm5102_codec, WM5102_FLL1,
+			ARIZONA_FLL_SRC_NONE, 0, 0);
+
+		ret = snd_soc_codec_set_pll(wm5102_codec, WM5102_FLL1,
+						ARIZONA_CLK_SRC_MCLK1,
+						WM8804_CLKOUT_HZ,
+						clk_freq);
+		if (!ret)
+			priv->fll1_freq = clk_freq;
+
+		mutex_unlock(&priv->fll1_mutex);
+
+		if (ret) {
+			dev_err(wm5102_codec->dev, "Failed to set FLL1: %d\n", ret);
+			return ret;
+		}
+
+	}
 
 	ret = snd_soc_codec_set_sysclk(wm5102_codec,
 			ARIZONA_CLK_SYSCLK,
@@ -303,7 +376,7 @@ static int snd_rpi_wsp_hw_params(struct snd_pcm_substream *substream,
 
 	priv->wm5102_sr =  params_rate(params);
 
-	ret = snd_rpi_wsp_config_5102_clks(wm5102_codec,  params_rate(params));
+	ret = snd_rpi_wsp_config_5102_clks(priv, wm5102_codec,  params_rate(params));
 	if (ret != 0) {
 		dev_err(wm5102_codec->dev, "snd_rpi_wsp_config_5102_clks failed: %d\n", ret);
 		return ret;
@@ -493,6 +566,9 @@ static int snd_rpi_wsp_probe(struct platform_device *pdev)
 	wm5102 = kzalloc(sizeof *wm5102, GFP_KERNEL);
 	if (!wm5102)
 		return -ENOMEM;
+
+	wm5102->fll1_freq = 0;
+	mutex_init(&wm5102->fll1_mutex);
 
 	snd_soc_card_set_drvdata(&snd_rpi_wsp, wm5102);
 
