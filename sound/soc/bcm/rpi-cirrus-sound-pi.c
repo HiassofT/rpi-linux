@@ -546,6 +546,7 @@ static int snd_rpi_wsp_late_probe(struct snd_soc_card *card)
 /* audio machine driver */
 static struct snd_soc_card snd_rpi_wsp = {
 	.name		= "snd_rpi_wsp",
+	.owner		= THIS_MODULE,
 	.dai_link	= snd_rpi_wsp_dai,
 	.num_links	= ARRAY_SIZE(snd_rpi_wsp_dai),
 	.late_probe = snd_rpi_wsp_late_probe,
