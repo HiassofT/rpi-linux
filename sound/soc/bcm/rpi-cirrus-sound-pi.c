@@ -590,7 +590,11 @@ static int snd_rpi_wsp_probe(struct platform_device *pdev)
 	snd_rpi_wsp.dev = &pdev->dev;
 	ret = snd_soc_register_card(&snd_rpi_wsp);
 	if (ret) {
-		dev_err(&pdev->dev, "Failed to register card: %d\n", ret);
+		if (ret == -EPROBE_DEFER)
+			dev_dbg(&pdev->dev, "register card requested probe deferral\n");
+		else
+			dev_err(&pdev->dev, "Failed to register card: %d\n", ret);
+
 		kfree(wm5102);
 	}
 
