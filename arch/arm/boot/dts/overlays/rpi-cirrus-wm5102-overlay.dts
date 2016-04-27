@@ -16,22 +16,13 @@
 	};
 
 	fragment@1 {
-		target = <&sound>;
-		__overlay__ {
-			compatible = "wlf,rpi-wm5102";
-			i2s-controller = <&i2s>;
-			status = "okay";
-		};
-	};
-
-	fragment@2 {
 		target = <&i2s>;
 		__overlay__ {
 			status = "okay";
 		};
 	};
 
-	fragment@3 {
+	fragment@2 {
 		target = <&gpio>;
 		__overlay__ {
 			wlf_pins: wlf_pins {
@@ -41,7 +32,7 @@
 		};
 	};
 
-	fragment@4 {
+	fragment@3 {
 		target-path = "/soc";
 		__overlay__ {
 
@@ -65,7 +56,7 @@
 		};
 	};
 
-	fragment@5 {
+	fragment@4 {
 		target = <&spi0>;
 		__overlay__ {
 			#address-cells = <1>;
@@ -117,7 +108,7 @@
 		};
 	};
 
-	fragment@6 {
+	fragment@5 {
 		target = <&i2c1>;
 		__overlay__ {
 			status = "okay";
@@ -133,6 +124,15 @@
 				DVDD-supply = <&ldo0>;
 				wlf,reset-gpio = <&gpio 8 0>;
 			};
+		};
+	};
+
+	fragment@6 {
+		target = <&sound>;
+		__overlay__ {
+			compatible = "wlf,rpi-wm5102";
+			i2s-controller = <&i2s>;
+			status = "okay";
 		};
 	};
 };
