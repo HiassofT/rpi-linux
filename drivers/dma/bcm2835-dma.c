@@ -236,6 +236,7 @@ static void bcm2835_dma_create_cb_set_length(
 	u32 finalextrainfo)
 {
 	size_t max_len = bcm2835_dma_max_frame_length(chan);
+	size_t period_remaining;
 
 	/* set the length taking lite-channel limitations into account */
 	control_block->length = min_t(u32, len, max_len);
@@ -252,15 +253,25 @@ static void bcm2835_dma_create_cb_set_length(
 	 * which is required during cyclic transfers
 	 */
 
-	/* have we filled in period_length yet? */
-	if (*total_len + control_block->length < period_len) {
+	/* calculate the length that remains to reach period_length */
+	period_remaining = period_len - *total_len;
+
+	/* Early exit if we aren't finishing this period */
+	if (period_remaining > max_len) {
+		/*
+		 * Split the remaining length between the last 2 CBs
+		 * to distribute the latency caused by CB fetches.
+		 */
+		if (period_remaining < max_len * 2)
+			control_block->length =
+				DIV_ROUND_UP(period_remaining, 8) * 4;
+
 		/* update number of bytes in this period so far */
 		*total_len += control_block->length;
 		return;
 	}
 
-	/* calculate the length that remains to reach period_length */
-	control_block->length = period_len - *total_len;
+	control_block->length = period_remaining;
 
 	/* reset total_length for next period */
 	*total_len = 0;
