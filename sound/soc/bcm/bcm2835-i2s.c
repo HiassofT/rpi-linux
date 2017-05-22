@@ -634,6 +634,58 @@ static const struct snd_soc_component_driver bcm2835_i2s_component = {
 	.name		= "bcm2835-i2s-comp",
 };
 
+static int test_rates[] = {
+	11025,
+	22050,
+	44100,
+	88200,
+	176400,
+	352800,
+	8000,
+	12000,
+	16000,
+	24000,
+	48000,
+	96000,
+	192000,
+	384000,
+};
+
+static int test_bclk[] = {
+	32,
+	48,
+	50,
+	64,
+	100
+};
+
+static void bcm2835_i2s_test_clk_rates(struct bcm2835_i2s_dev *dev)
+{
+	int i, j;
+	int rate, bclk, brate, clk_rate, parent_rate;
+	struct clk *parent;
+
+	for (i = 0; i < ARRAY_SIZE(test_rates); i++) {
+		for (j = 0; j < ARRAY_SIZE(test_bclk); j++) {
+			rate = test_rates[i];
+			bclk = test_bclk[j];
+			brate = rate * bclk;
+
+			clk_set_rate(dev->clk, brate);
+
+			clk_rate = clk_get_rate(dev->clk);
+			parent = clk_get_parent(dev->clk);
+			parent_rate = clk_get_rate(parent);
+
+			pr_info("set clk %6d * %3d = %9d got %9d parent: %pC (%d) %s\n",
+				rate, bclk, brate, clk_rate,
+				parent, parent_rate,
+				parent_rate % brate ? "FRACT" : "INT");
+		}
+	}
+			
+}
+
 static int bcm2835_i2s_probe(struct platform_device *pdev)
 {
 	struct bcm2835_i2s_dev *dev;
@@ -720,6 +772,8 @@ static int bcm2835_i2s_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Could not register PCM: %d\n", ret);
 		return ret;
 	}
+
+	bcm2835_i2s_test_clk_rates(dev);
 
 	return 0;
 }
