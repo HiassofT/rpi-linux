@@ -241,7 +241,13 @@ static int snd_rpi_hifiberry_dacplus_startup(
 	struct snd_soc_codec *codec = rtd->codec;
 
 	snd_soc_update_bits(codec, PCM512x_GPIO_CONTROL_1, 0x08, 0x08);
-	return 0;
+
+	if (snd_rpi_hifiberry_is_dacpro)
+		return snd_pcm_hw_constraint_mask64(substream->runtime,
+			SNDRV_PCM_HW_PARAM_FORMAT,
+			SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S32_LE);
+	else
+		return 0;
 }
 
 static void snd_rpi_hifiberry_dacplus_shutdown(
