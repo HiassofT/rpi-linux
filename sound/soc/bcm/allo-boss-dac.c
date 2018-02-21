@@ -306,6 +306,10 @@ static int snd_allo_boss_startup(
 		 */
 		if (!IS_ERR(priv->sclk))
 			clk_set_rate(priv->sclk, CLK_48EN_RATE);
+
+		return snd_pcm_hw_constraint_mask64(substream->runtime,
+			SNDRV_PCM_HW_PARAM_FORMAT,
+			SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S32_LE);
 	}
 
 	return 0;
