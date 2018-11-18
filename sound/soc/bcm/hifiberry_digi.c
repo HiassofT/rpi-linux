@@ -34,7 +34,7 @@ static bool snd_rpi_hifiberry_is_digipro;
 static struct gpio_desc *snd_rpi_hifiberry_clk44gpio;
 static struct gpio_desc *snd_rpi_hifiberry_clk48gpio;
 
-static int samplerate=44100;
+static int samplerate=0;
 
 static uint32_t snd_rpi_hifiberry_digi_enable_clock(int sample_rate)
 {
@@ -82,6 +82,9 @@ static int snd_rpi_hifiberry_digi_hw_params(struct snd_pcm_substream *substream,
 	int sampling_freq=1;
 
 	int ret;
+
+	if (samplerate == params_rate(params))
+		return 0;
 
 	samplerate = params_rate(params);
 
