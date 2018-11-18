@@ -65,7 +65,7 @@ static int snd_rpi_hifiberry_digi_init(struct snd_soc_pcm_runtime *rtd)
 		dai->stream_name = "HiFiBerry Digi+ Pro HiFi";
 	}
 
-	return 0;
+	return snd_soc_dai_set_bclk_ratio(rtd->cpu_dai,64);
 }
 
 static int snd_rpi_hifiberry_digi_hw_params(struct snd_pcm_substream *substream,
@@ -74,7 +74,6 @@ static int snd_rpi_hifiberry_digi_hw_params(struct snd_pcm_substream *substream,
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct snd_soc_dai *codec_dai = rtd->codec_dai;
 	struct snd_soc_codec *codec = rtd->codec;
-	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
 
 	int sysclk = 27000000; /* This is fixed on this board */
 
@@ -138,9 +137,7 @@ static int snd_rpi_hifiberry_digi_hw_params(struct snd_pcm_substream *substream,
 	}
 
 	/* set sampling frequency status bits */
-	snd_soc_update_bits(codec, WM8804_SPDTX4, 0x0f, sampling_freq);
-
-	return snd_soc_dai_set_bclk_ratio(cpu_dai,64);
+	return snd_soc_update_bits(codec, WM8804_SPDTX4, 0x0f, sampling_freq);
 }
 
 /* machine stream operations */
