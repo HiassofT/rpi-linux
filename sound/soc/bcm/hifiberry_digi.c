@@ -27,10 +27,6 @@
 
 #include "../codecs/wm8804.h"
 
-static short int auto_shutdown_output = 0;
-module_param(auto_shutdown_output, short, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
-MODULE_PARM_DESC(auto_shutdown_output, "Shutdown SP/DIF output if playback is stopped");
-
 #define CLK_44EN_RATE 22579200UL
 #define CLK_48EN_RATE 24576000UL
 
@@ -61,11 +57,6 @@ static uint32_t snd_rpi_hifiberry_digi_enable_clock(int sample_rate)
 
 static int snd_rpi_hifiberry_digi_init(struct snd_soc_pcm_runtime *rtd)
 {
-	struct snd_soc_codec *codec = rtd->codec;
-
-	/* enable TX output */
-	snd_soc_update_bits(codec, WM8804_PWRDN, 0x4, 0x0);
-
 	/* Initialize Digi+ Pro hardware */
 	if (snd_rpi_hifiberry_is_digipro) {
 		struct snd_soc_dai_link *dai = rtd->dai_link;
@@ -76,25 +67,6 @@ static int snd_rpi_hifiberry_digi_init(struct snd_soc_pcm_runtime *rtd)
 
 	return 0;
 }
-
-static int snd_rpi_hifiberry_digi_startup(struct snd_pcm_substream *substream) {
-	/* turn on digital output */
-	struct snd_soc_pcm_runtime *rtd = substream->private_data;
-	struct snd_soc_codec *codec = rtd->codec;
-	snd_soc_update_bits(codec, WM8804_PWRDN, 0x3c, 0x00);
-	return 0;
-}
-
-static void snd_rpi_hifiberry_digi_shutdown(struct snd_pcm_substream *substream) {
-	/* turn off output */
-	if (auto_shutdown_output) {
-		/* turn off output */
-		struct snd_soc_pcm_runtime *rtd = substream->private_data;
-		struct snd_soc_codec *codec = rtd->codec;
-		snd_soc_update_bits(codec, WM8804_PWRDN, 0x3c, 0x3c);
-	}
-}
-
 
 static int snd_rpi_hifiberry_digi_hw_params(struct snd_pcm_substream *substream,
 				       struct snd_pcm_hw_params *params)
@@ -165,12 +137,6 @@ static int snd_rpi_hifiberry_digi_hw_params(struct snd_pcm_substream *substream,
 		return ret;
 	}
 
-	/* Enable TX output */
-	snd_soc_update_bits(codec, WM8804_PWRDN, 0x4, 0x0);
-
-	/* Power on */
-	snd_soc_update_bits(codec, WM8804_PWRDN, 0x9, 0);
-
 	/* set sampling frequency status bits */
 	snd_soc_update_bits(codec, WM8804_SPDTX4, 0x0f, sampling_freq);
 
@@ -180,8 +146,6 @@ static int snd_rpi_hifiberry_digi_hw_params(struct snd_pcm_substream *substream,
 /* machine stream operations */
 static struct snd_soc_ops snd_rpi_hifiberry_digi_ops = {
 	.hw_params = snd_rpi_hifiberry_digi_hw_params,
-        .startup = snd_rpi_hifiberry_digi_startup,
-        .shutdown = snd_rpi_hifiberry_digi_shutdown,
 };
 
 static struct snd_soc_dai_link snd_rpi_hifiberry_digi_dai[] = {
