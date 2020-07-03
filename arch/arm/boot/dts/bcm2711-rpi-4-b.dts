@@ -351,6 +351,10 @@
 	pinctrl-0 = <&i2s_pins>;
 };
 
+&firmwarekms {
+	compatible = "raspberrypi,rpi-firmware-kms-2711";
+};
+
 / {
 	__overrides__ {
 		act_led_gpio = <&act_led>,"gpios:4";
