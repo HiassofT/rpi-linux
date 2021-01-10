@@ -232,15 +232,15 @@ static int dmaengine_pcm_new(struct snd_soc_component *component,
 	struct device *dev = component->dev;
 	struct snd_pcm_substream *substream;
 	size_t prealloc_buffer_size;
-	size_t max_buffer_size;
+	size_t max_buffer_size = SIZE_MAX;
 	unsigned int i;
 
 	if (config && config->prealloc_buffer_size) {
 		prealloc_buffer_size = config->prealloc_buffer_size;
-		max_buffer_size = config->pcm_hardware->buffer_bytes_max;
+		if (config->pcm_hardware)
+			max_buffer_size = config->pcm_hardware->buffer_bytes_max;
 	} else {
 		prealloc_buffer_size = 512 * 1024;
-		max_buffer_size = SIZE_MAX;
 	}
 
 	for_each_pcm_streams(i) {
