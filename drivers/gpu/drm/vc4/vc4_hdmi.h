@@ -39,6 +39,9 @@ struct vc4_hdmi_variant {
 	/* ALSA card name */
 	const char *card_name;
 
+	/* ALSA dmaengine PCM config */
+	const struct snd_dmaengine_pcm_config *pcm_config;
+
 	/* Filename to expose the registers in debugfs */
 	const char *debugfs_name;
 

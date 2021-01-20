@@ -1876,9 +1876,15 @@ static struct snd_soc_dai_driver vc4_hdmi_audio_cpu_dai_drv = {
 	.ops = &vc4_hdmi_audio_dai_ops,
 };
 
-static const struct snd_dmaengine_pcm_config pcm_conf = {
+static const struct snd_dmaengine_pcm_config bcm2835_pcm_config = {
 	.chan_names[SNDRV_PCM_STREAM_PLAYBACK] = "audio-rx",
 	.prepare_slave_config = snd_dmaengine_pcm_prepare_slave_config,
+};
+
+static const struct snd_dmaengine_pcm_config bcm2711_pcm_config = {
+	.chan_names[SNDRV_PCM_STREAM_PLAYBACK] = "audio-rx",
+	.prepare_slave_config = snd_dmaengine_pcm_prepare_slave_config,
+	.prealloc_buffer_size = 1280 * 1024,
 };
 
 static int vc4_hdmi_audio_init(struct vc4_hdmi *vc4_hdmi)
@@ -1928,7 +1934,7 @@ static int vc4_hdmi_audio_init(struct vc4_hdmi *vc4_hdmi)
 		IEC958_AES1_CON_ORIGINAL | IEC958_AES1_CON_PCM_CODER;
 	vc4_hdmi->audio.iec_status[3] = IEC958_AES3_CON_FS_48000;
 
-	ret = devm_snd_dmaengine_pcm_register(dev, &pcm_conf, 0);
+	ret = devm_snd_dmaengine_pcm_register(dev, vc4_hdmi->variant->pcm_config, 0);
 	if (ret) {
 		dev_err(dev, "Could not register PCM component: %d\n", ret);
 		return ret;
@@ -2591,6 +2597,7 @@ static const struct vc4_hdmi_variant bcm2835_variant = {
 	.encoder_type		= VC4_ENCODER_TYPE_HDMI0,
 	.debugfs_name		= "hdmi_regs",
 	.card_name		= "vc4-hdmi",
+	.pcm_config		= &bcm2835_pcm_config,
 	.max_pixel_clock	= 162000000,
 	.cec_input_clock	= VC4_HSM_CLOCK,
 	.registers		= vc4_hdmi_fields,
@@ -2614,6 +2621,7 @@ static const struct vc4_hdmi_variant bcm2711_hdmi0_variant = {
 	.encoder_type		= VC4_ENCODER_TYPE_HDMI0,
 	.debugfs_name		= "hdmi0_regs",
 	.card_name		= "vc4-hdmi-0",
+	.pcm_config		= &bcm2711_pcm_config,
 	.max_pixel_clock	= HDMI_14_MAX_TMDS_CLK,
 	.cec_input_clock	= 27000000,
 	.registers		= vc5_hdmi_hdmi0_fields,
@@ -2644,6 +2652,7 @@ static const struct vc4_hdmi_variant bcm2711_hdmi1_variant = {
 	.encoder_type		= VC4_ENCODER_TYPE_HDMI1,
 	.debugfs_name		= "hdmi1_regs",
 	.card_name		= "vc4-hdmi-1",
+	.pcm_config		= &bcm2711_pcm_config,
 	.max_pixel_clock	= HDMI_14_MAX_TMDS_CLK,
 	.cec_input_clock	= 27000000,
 	.registers		= vc5_hdmi_hdmi1_fields,
