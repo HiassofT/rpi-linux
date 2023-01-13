@@ -1463,6 +1463,54 @@ static void vc5_hdmi_csc_setup(struct vc4_hdmi *vc4_hdmi,
 	drm_dev_exit(idx);
 }
 
+static void vc4_hdmi_set_avmute(struct vc4_hdmi *vc4_hdmi, bool mute)
+{
+	struct drm_encoder *encoder = &vc4_hdmi->encoder.base;
+	u32 packet_id = 0;
+	const struct vc4_hdmi_register *ram_packet_start =
+		&vc4_hdmi->variant->registers[HDMI_RAM_PACKET_START];
+	u32 packet_reg = ram_packet_start->offset + VC4_HDMI_PACKET_STRIDE * packet_id;
+	void __iomem *base = __vc4_hdmi_get_field_base(vc4_hdmi,
+						       ram_packet_start->reg);
+	unsigned long flags;
+	int ret;
+	/*
+	 * The "set mute" flag is bit zero, "clear mute" is bit 4.
+	 * See HDMI spec, section 5.3.6
+	*/
+	u32 ram_value = mute ? 0x01 : 0x10;
+
+	ret = vc4_hdmi_stop_packet(encoder, 0x80 + packet_id, true);
+	if (ret) {
+		DRM_ERROR("Failed to wait for infoframe to go idle: %d\n", ret);
+		return;
+	}
+
+	spin_lock_irqsave(&vc4_hdmi->hw_lock, flags);
+
+	/* The GCP has a header with "3" in byte 0, zero elsewhere */
+	writel(3, base + packet_reg);
+	/* The GCP data of 8 bytes is repeated 4 times across the whole packet */
+	writel(ram_value, base + packet_reg + 4);
+	writel(0, base + packet_reg + 8);
+	writel(ram_value, base + packet_reg + 12);
+	writel(0, base + packet_reg + 16);
+	writel(ram_value, base + packet_reg + 20);
+	writel(0, base + packet_reg + 24);
+	writel(ram_value, base + packet_reg + 28);
+	writel(0, base + packet_reg + 32);
+
+	HDMI_WRITE(HDMI_RAM_PACKET_CONFIG,
+		   HDMI_READ(HDMI_RAM_PACKET_CONFIG) | BIT(packet_id));
+
+	spin_unlock_irqrestore(&vc4_hdmi->hw_lock, flags);
+
+	ret = wait_for((HDMI_READ(HDMI_RAM_PACKET_STATUS) &
+			BIT(packet_id)), 100);
+	if (ret)
+		DRM_ERROR("Failed to wait for infoframe to start: %d\n", ret);
+}
+
 static void vc4_hdmi_set_timings(struct vc4_hdmi *vc4_hdmi,
 				 struct drm_connector_state *state,
 				 const struct drm_display_mode *mode)
@@ -1523,6 +1571,8 @@ static void vc4_hdmi_set_timings(struct vc4_hdmi *vc4_hdmi,
 	HDMI_WRITE(HDMI_MISC_CONTROL, reg);
 
 	spin_unlock_irqrestore(&vc4_hdmi->hw_lock, flags);
+
+	vc4_hdmi_set_avmute(vc4_hdmi, false);
 
 	drm_dev_exit(idx);
 }
@@ -1890,6 +1940,7 @@ static void vc4_hdmi_encoder_post_crtc_enable(struct drm_encoder *encoder,
 			  VC4_HDMI_SCHEDULER_CONTROL_HDMI_ACTIVE));
 
 		HDMI_WRITE(HDMI_RAM_PACKET_CONFIG,
+			   HDMI_READ(HDMI_RAM_PACKET_CONFIG) |
 			   VC4_HDMI_RAM_PACKET_ENABLE);
 
 		spin_unlock_irqrestore(&vc4_hdmi->hw_lock, flags);
