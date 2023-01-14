@@ -1670,6 +1670,9 @@ static void vc5_hdmi_set_timings(struct vc4_hdmi *vc4_hdmi,
 	reg |= VC5_HDMI_GCP_WORD_1_GCP_SUBPACKET_BYTE_0_CLEAR_AVMUTE;
 	HDMI_WRITE(HDMI_GCP_WORD_1, reg);
 
+	drm_info(drm, "output_bpc = %d, gcp = %d gcp word = 0x%08x\n",
+		vc4_state->output_bpc, gcp, reg);
+
 	reg = HDMI_READ(HDMI_GCP_CONFIG);
 	reg |= VC5_HDMI_GCP_CONFIG_GCP_ENABLE;
 	HDMI_WRITE(HDMI_GCP_CONFIG, reg);
